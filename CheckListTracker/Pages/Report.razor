@@ -1,0 +1,255 @@
+@page "/report/{Id}"
+@inject ChecklistService Svc
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>Report – FAT/SAT Tracker</PageTitle>
+
+@if (_loading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else if (_exec == null)
+{
+    <div class="alert alert-danger">Report nebol nájdený.</div>
+}
+else
+{
+    var stats = ChecklistService.GetStats(_exec);
+
+    <div class="d-flex gap-2 mb-3 no-print">
+        <button class="btn btn-outline-secondary btn-sm"
+                @onclick="@(() => Nav.NavigateTo($"/checklist/{_exec.Id}"))">← Späť</button>
+        <button class="btn btn-primary btn-sm" @onclick="PrintAsync">🖨 Tlačiť / Uložiť PDF</button>
+    </div>
+
+    <div id="report-content">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold mb-1">@_exec.Type – @(_exec.Type == ChecklistType.FAT ? "Factory Acceptance Test" : "Site Acceptance Test")</h2>
+            <h3 class="h5 text-muted">Protokol o prevzatí</h3>
+            <hr />
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <table class="table table-sm table-bordered">
+                    <tbody>
+                        <tr><th class="bg-light" style="width:40%">Stroj / zariadenie</th><td><strong>@_exec.MachineName</strong></td></tr>
+                        <tr><th class="bg-light">Technológia</th><td>@_exec.Technology</td></tr>
+                        <tr><th class="bg-light">Sériové číslo</th><td>@(_exec.SerialNumber.Length > 0 ? _exec.SerialNumber : "–")</td></tr>
+                        <tr><th class="bg-light">Výrobca</th><td>@(_exec.Manufacturer.Length > 0 ? _exec.Manufacturer : "–")</td></tr>
+                        <tr><th class="bg-light">Šablóna</th><td>@_exec.TemplateName</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-sm table-bordered">
+                    <tbody>
+                        <tr><th class="bg-light" style="width:40%">Zákazník</th><td>@(_exec.Customer.Length > 0 ? _exec.Customer : "–")</td></tr>
+                        <tr><th class="bg-light">Miesto</th><td>@(_exec.Location.Length > 0 ? _exec.Location : "–")</td></tr>
+                        <tr><th class="bg-light">Inšpektor</th><td>@(_exec.Inspector.Length > 0 ? _exec.Inspector : "–")</td></tr>
+                        <tr><th class="bg-light">Číslo projektu</th><td>@(_exec.ProjectNumber.Length > 0 ? _exec.ProjectNumber : "–")</td></tr>
+                        <tr><th class="bg-light">Dátum</th><td>@_exec.StartDate.ToString("dd.MM.yyyy") @(_exec.CompletedDate.HasValue ? $"→ {_exec.CompletedDate.Value:dd.MM.yyyy}" : "")</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card border mb-4">
+            <div class="card-header bg-light fw-semibold">Súhrn výsledkov</div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col">
+                        <div class="display-6 fw-bold">@stats.Total</div>
+                        <div class="text-muted small">Celkovo bodov</div>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 fw-bold text-success">@stats.Pass</div>
+                        <div class="text-muted small">OK / Vyhovuje</div>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 fw-bold text-danger">@stats.Fail</div>
+                        <div class="text-muted small">FAIL / Nevyhovuje</div>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 fw-bold text-warning">@stats.Observation</div>
+                        <div class="text-muted small">Odchýlka / OBS</div>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 fw-bold text-secondary">@stats.NA</div>
+                        <div class="text-muted small">N/A</div>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 fw-bold text-muted">@stats.Pending</div>
+                        <div class="text-muted small">Neskontrolované</div>
+                    </div>
+                </div>
+                <div class="progress mt-3" style="height:16px">
+                    <div class="progress-bar bg-success"
+                         style="width:@(stats.PassPct)%">@(stats.Pass > 0 ? $"OK {stats.Pass}" : "")</div>
+                    <div class="progress-bar bg-danger"
+                         style="width:@(stats.Total == 0 ? 0 : stats.Fail * 100.0 / stats.Total)%">
+                        @(stats.Fail > 0 ? $"FAIL {stats.Fail}" : "")
+                    </div>
+                    <div class="progress-bar bg-warning"
+                         style="width:@(stats.Total == 0 ? 0 : stats.Observation * 100.0 / stats.Total)%">
+                        @(stats.Observation > 0 ? $"OBS {stats.Observation}" : "")
+                    </div>
+                    <div class="progress-bar bg-secondary"
+                         style="width:@(stats.Total == 0 ? 0 : stats.NA * 100.0 / stats.Total)%">
+                        @(stats.NA > 0 ? $"N/A {stats.NA}" : "")
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <span class="badge fs-6 @(_exec.Status == ExecutionStatus.Completed ? "bg-success" : "bg-warning text-dark")">
+                        Stav: @(_exec.Status == ExecutionStatus.Completed ? "DOKONČENÉ" : "PREBIEHA")
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        @foreach (var section in _exec.Sections.OrderBy(s => s.Order))
+        {
+            var anyContent = section.Items.Any(i => HasContent(_resultMap.GetValueOrDefault(i.Id)));
+            <div class="mb-4 page-break-inside-avoid">
+                <h5 class="border-bottom pb-2 fw-bold">@section.Title</h5>
+                <table class="table table-sm table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:3%">#</th>
+                            <th>Popis kontrolného bodu</th>
+                            <th style="width:8%">Ref.</th>
+                            <th style="width:10%">Stav</th>
+                            <th>Poznámka</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < section.Items.Count; i++)
+                        {
+                            var item = section.Items[i];
+                            var result = _resultMap.GetValueOrDefault(item.Id) ?? new ItemResult { ItemId = item.Id };
+                            <tr class="@RowClass(result.Status)">
+                                <td class="text-muted text-center">@(i + 1)</td>
+                                <td>
+                                    @item.Description
+                                    @if (!item.IsRequired)
+                                    {
+                                        <span class="badge bg-light text-muted border ms-1" style="font-size:0.65rem">opt</span>
+                                    }
+                                </td>
+                                <td class="text-muted small">@item.Reference</td>
+                                <td class="text-center">
+                                    <span class="badge @StatusBadgeClass(result.Status)">@StatusLabel(result.Status)</span>
+                                </td>
+                                <td class="small">@result.Notes</td>
+                            </tr>
+                            @if (result.PhotoDataUrls.Count > 0)
+                            {
+                                <tr>
+                                    <td colspan="5" class="py-2">
+                                        <div class="d-flex flex-wrap gap-2">
+                                            @foreach (var photo in result.PhotoDataUrls)
+                                            {
+                                                <img src="@photo" class="rounded border"
+                                                     style="max-height:120px;max-width:180px;object-fit:contain"
+                                                     @onclick="@(() => _previewPhoto = photo)" />
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_exec.GeneralNotes))
+        {
+            <div class="mb-4">
+                <h5 class="border-bottom pb-2 fw-bold">Všeobecné poznámky</h5>
+                <p class="border rounded p-3 bg-light">@_exec.GeneralNotes</p>
+            </div>
+        }
+
+        <div class="row mt-5 pt-4">
+            <div class="col-md-5">
+                <div class="border-top pt-2">
+                    <div class="text-muted small">Inšpektor / technik</div>
+                    <div class="fw-semibold">@(_exec.Inspector.Length > 0 ? _exec.Inspector : "_____________________________")</div>
+                    <div class="mt-3 border-top pt-1 text-muted small">Podpis a dátum</div>
+                </div>
+            </div>
+            <div class="col-md-5 ms-auto">
+                <div class="border-top pt-2">
+                    <div class="text-muted small">Zákazník / zástupca</div>
+                    <div class="fw-semibold">_____________________________</div>
+                    <div class="mt-3 border-top pt-1 text-muted small">Podpis a dátum</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-muted small text-end mt-4 no-print-hide">
+            Generované: @DateTime.Now.ToString("dd.MM.yyyy HH:mm") | FAT/SAT Tracker
+        </div>
+    </div>
+}
+
+@if (_previewPhoto != null)
+{
+    <div class="modal-backdrop fade show no-print" @onclick="() => _previewPhoto = null"></div>
+    <div class="modal fade show d-block no-print" tabindex="-1" @onclick="() => _previewPhoto = null">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content bg-dark border-0">
+                <img src="@_previewPhoto" class="img-fluid rounded" style="max-height:85vh;object-fit:contain" />
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private ChecklistExecution? _exec;
+    private Dictionary<string, ItemResult> _resultMap = new();
+    private bool _loading = true;
+    private string? _previewPhoto;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _exec = await Svc.GetExecutionAsync(Id);
+        if (_exec != null)
+            _resultMap = _exec.Results.ToDictionary(r => r.ItemId);
+        _loading = false;
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("printPage");
+
+    private static bool HasContent(ItemResult? r) =>
+        r != null && (r.Status != ItemStatus.Pending || !string.IsNullOrEmpty(r.Notes) || r.PhotoDataUrls.Count > 0);
+
+    private static string RowClass(ItemStatus s) => s switch
+    {
+        ItemStatus.Fail => "table-danger",
+        ItemStatus.Observation => "table-warning",
+        _ => ""
+    };
+
+    private static string StatusBadgeClass(ItemStatus s) => s switch
+    {
+        ItemStatus.Pass => "bg-success",
+        ItemStatus.Fail => "bg-danger",
+        ItemStatus.Observation => "bg-warning text-dark",
+        ItemStatus.NA => "bg-secondary",
+        _ => "bg-light text-muted border"
+    };
+
+    private static string StatusLabel(ItemStatus s) => s switch
+    {
+        ItemStatus.Pass => "OK",
+        ItemStatus.Fail => "FAIL",
+        ItemStatus.Observation => "OBS",
+        ItemStatus.NA => "N/A",
+        _ => "–"
+    };
+}

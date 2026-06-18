@@ -1,0 +1,216 @@
+@page "/template/new"
+@page "/template/{Id}"
+@inject ChecklistService Svc
+@inject NavigationManager Nav
+
+<PageTitle>@(_isNew ? "Nová šablóna" : "Upraviť šablónu") – FAT/SAT Tracker</PageTitle>
+
+<div class="d-flex align-items-center gap-2 mb-4">
+    <button class="btn btn-outline-secondary btn-sm" @onclick="@(() => Nav.NavigateTo("/templates"))">
+        ← Späť
+    </button>
+    <h1 class="h3 mb-0">@(_isNew ? "Nová šablóna" : "Upraviť šablónu")</h1>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent fw-semibold">Základné informácie</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Názov šablóny *</label>
+                        <input class="form-control" @bind="_tpl.Name" placeholder="napr. CNC fréza, Hydraulický lis" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Technológia / typ stroja *</label>
+                        <input class="form-control" @bind="_tpl.Technology" placeholder="napr. CNC, PLC, Hydraulika" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Popis</label>
+                        <textarea class="form-control" @bind="_tpl.Description" rows="3"
+                                  placeholder="Krátky popis šablóny..."></textarea>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="alert alert-danger py-2">@_error</div>
+                    }
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary flex-fill" @onclick="SaveAsync" disabled="@_saving">
+                            @(_saving ? "Ukladám..." : "Uložiť")
+                        </button>
+                        <button class="btn btn-outline-secondary" @onclick="@(() => Nav.NavigateTo("/templates"))">
+                            Zrušiť
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h5 mb-0">Sekcie a body kontroly</h2>
+                <button class="btn btn-outline-primary btn-sm" @onclick="AddSection">+ Sekcia</button>
+            </div>
+
+            @if (_tpl.Sections.Count == 0)
+            {
+                <div class="text-center py-4 text-muted border rounded">
+                    Žiadne sekcie. Kliknite na „+ Sekcia" pre pridanie.
+                </div>
+            }
+
+            @for (int si = 0; si < _tpl.Sections.Count; si++)
+            {
+                var sIdx = si;
+                var section = _tpl.Sections[sIdx];
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light d-flex align-items-center gap-2">
+                        <input class="form-control form-control-sm fw-semibold"
+                               style="max-width:350px"
+                               @bind="section.Title"
+                               placeholder="Názov sekcie..." />
+                        <div class="ms-auto d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-secondary" title="Hore"
+                                    disabled="@(sIdx == 0)"
+                                    @onclick="() => MoveSection(sIdx, -1)">↑</button>
+                            <button class="btn btn-sm btn-outline-secondary" title="Dole"
+                                    disabled="@(sIdx == _tpl.Sections.Count - 1)"
+                                    @onclick="() => MoveSection(sIdx, 1)">↓</button>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => RemoveSection(sIdx)">× Sekcia</button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        @for (int ii = 0; ii < section.Items.Count; ii++)
+                        {
+                            var iIdx = ii;
+                            var item = section.Items[iIdx];
+                            <div class="border-bottom px-3 py-2 d-flex align-items-start gap-2">
+                                <div class="flex-fill">
+                                    <div class="mb-1">
+                                        <input class="form-control form-control-sm"
+                                               @bind="item.Description"
+                                               placeholder="Popis kontrolného bodu..." />
+                                    </div>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input class="form-control form-control-sm"
+                                               style="max-width:160px"
+                                               @bind="item.Reference"
+                                               placeholder="Referencia (norma...)" />
+                                        <div class="form-check mb-0">
+                                            <input class="form-check-input" type="checkbox"
+                                                   id="req_@item.Id"
+                                                   @bind="item.IsRequired" />
+                                            <label class="form-check-label small" for="req_@item.Id">Povinný</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-column gap-1 pt-1">
+                                    <button class="btn btn-xs btn-outline-secondary"
+                                            style="font-size:0.65rem;padding:1px 5px"
+                                            disabled="@(iIdx == 0)"
+                                            @onclick="() => MoveItem(section, iIdx, -1)">↑</button>
+                                    <button class="btn btn-xs btn-outline-secondary"
+                                            style="font-size:0.65rem;padding:1px 5px"
+                                            disabled="@(iIdx == section.Items.Count - 1)"
+                                            @onclick="() => MoveItem(section, iIdx, 1)">↓</button>
+                                    <button class="btn btn-xs btn-outline-danger"
+                                            style="font-size:0.65rem;padding:1px 5px"
+                                            @onclick="() => RemoveItem(section, iIdx)">×</button>
+                                </div>
+                            </div>
+                        }
+                        <div class="px-3 py-2">
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    @onclick="() => AddItem(section)">+ Bod kontroly</button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (_tpl.Sections.Count > 0)
+            {
+                <div class="text-end">
+                    <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                        @(_saving ? "Ukladám..." : "Uložiť šablónu")
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+
+    private ChecklistTemplate _tpl = new();
+    private bool _isNew;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isNew = string.IsNullOrEmpty(Id) || Id == "new";
+        if (!_isNew)
+        {
+            var existing = await Svc.GetTemplateAsync(Id!);
+            if (existing != null) _tpl = existing;
+            else Nav.NavigateTo("/templates");
+        }
+        _loading = false;
+    }
+
+    private void AddSection()
+    {
+        _tpl.Sections.Add(new TemplateSection { Title = $"Sekcia {_tpl.Sections.Count + 1}", Order = _tpl.Sections.Count });
+    }
+
+    private void RemoveSection(int idx) => _tpl.Sections.RemoveAt(idx);
+
+    private void MoveSection(int idx, int dir)
+    {
+        var target = idx + dir;
+        if (target < 0 || target >= _tpl.Sections.Count) return;
+        (_tpl.Sections[idx], _tpl.Sections[target]) = (_tpl.Sections[target], _tpl.Sections[idx]);
+    }
+
+    private void AddItem(TemplateSection section)
+    {
+        section.Items.Add(new TemplateItem { Order = section.Items.Count });
+    }
+
+    private void RemoveItem(TemplateSection section, int idx) => section.Items.RemoveAt(idx);
+
+    private void MoveItem(TemplateSection section, int idx, int dir)
+    {
+        var target = idx + dir;
+        if (target < 0 || target >= section.Items.Count) return;
+        (section.Items[idx], section.Items[target]) = (section.Items[target], section.Items[idx]);
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_tpl.Name)) { _error = "Názov šablóny je povinný."; return; }
+        if (string.IsNullOrWhiteSpace(_tpl.Technology)) { _error = "Technológia / typ stroja je povinný."; return; }
+
+        _saving = true;
+        for (int i = 0; i < _tpl.Sections.Count; i++)
+        {
+            _tpl.Sections[i].Order = i;
+            for (int j = 0; j < _tpl.Sections[i].Items.Count; j++)
+                _tpl.Sections[i].Items[j].Order = j;
+        }
+
+        await Svc.SaveTemplateAsync(_tpl);
+        _saving = false;
+        Nav.NavigateTo("/templates");
+    }
+}

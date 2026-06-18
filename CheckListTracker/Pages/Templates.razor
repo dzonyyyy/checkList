@@ -1,0 +1,114 @@
+@page "/templates"
+@inject ChecklistService Svc
+@inject NavigationManager Nav
+
+<PageTitle>Šablóny – FAT/SAT Tracker</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Šablóny kontrolných listov</h1>
+    <button class="btn btn-primary" @onclick="@(() => Nav.NavigateTo("/template/new"))">
+        + Nová šablóna
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else if (_templates.Count == 0)
+{
+    <div class="text-center py-5 text-muted">
+        <div style="font-size:3rem">📄</div>
+        <h4>Žiadne šablóny</h4>
+        <p>Vytvorte prvú šablónu pre typ stroja alebo technológie.</p>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var tpl in _templates)
+        {
+            var itemCount = tpl.Sections.Sum(s => s.Items.Count);
+            <div class="col-md-6 col-xl-4">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">@tpl.Name</h5>
+                        <span class="badge bg-secondary mb-2">@tpl.Technology</span>
+                        @if (!string.IsNullOrEmpty(tpl.Description))
+                        {
+                            <p class="card-text text-muted small">@tpl.Description</p>
+                        }
+                        <div class="row text-center mt-2">
+                            <div class="col">
+                                <div class="fw-bold">@tpl.Sections.Count</div>
+                                <div class="text-muted" style="font-size:0.75rem">sekcií</div>
+                            </div>
+                            <div class="col">
+                                <div class="fw-bold">@itemCount</div>
+                                <div class="text-muted" style="font-size:0.75rem">bodov</div>
+                            </div>
+                            <div class="col">
+                                <div class="fw-bold small">@tpl.CreatedAt.ToString("dd.MM.yy")</div>
+                                <div class="text-muted" style="font-size:0.75rem">vytvorená</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary flex-fill"
+                                @onclick="@(() => Nav.NavigateTo($"/template/{tpl.Id}"))">
+                            Upraviť
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger"
+                                @onclick="@(() => ConfirmDelete(tpl))">
+                            Zmazať
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (_deleteTarget != null)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Potvrdiť zmazanie</h5>
+                </div>
+                <div class="modal-body">
+                    Naozaj chcete zmazať šablónu <strong>@_deleteTarget.Name</strong>?
+                    Táto akcia sa nedá vrátiť.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _deleteTarget = null">Zrušiť</button>
+                    <button class="btn btn-danger" @onclick="DoDelete">Zmazať</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ChecklistTemplate> _templates = [];
+    private bool _loading = true;
+    private ChecklistTemplate? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _templates = await Svc.GetTemplatesAsync();
+        _loading = false;
+    }
+
+    private void ConfirmDelete(ChecklistTemplate tpl) => _deleteTarget = tpl;
+
+    private async Task DoDelete()
+    {
+        if (_deleteTarget == null) return;
+        await Svc.DeleteTemplateAsync(_deleteTarget.Id);
+        _templates = await Svc.GetTemplatesAsync();
+        _deleteTarget = null;
+    }
+}

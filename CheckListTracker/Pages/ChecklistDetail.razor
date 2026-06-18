@@ -1,0 +1,380 @@
+@page "/checklist/{Id}"
+@inject ChecklistService Svc
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<PageTitle>@_exec?.MachineName – FAT/SAT Tracker</PageTitle>
+
+@if (_loading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else if (_exec == null)
+{
+    <div class="alert alert-danger">Kontrolný list nebol nájdený.</div>
+}
+else
+{
+    var stats = ChecklistService.GetStats(_exec);
+
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <button class="btn btn-outline-secondary btn-sm" @onclick="@(() => Nav.NavigateTo("/checklists"))">← Späť</button>
+        <h1 class="h4 mb-0 flex-fill">
+            <span class="badge @(_exec.Type == ChecklistType.FAT ? "bg-primary" : "bg-success") me-2">@_exec.Type</span>
+            @_exec.MachineName
+        </h1>
+        <span class="badge @StatusBadgeClass(_exec.Status) fs-6">@StatusLabel(_exec.Status)</span>
+        <button class="btn btn-outline-secondary btn-sm" @onclick="@(() => Nav.NavigateTo($"/report/{_exec.Id}"))">
+            📄 Report
+        </button>
+        @if (_exec.Status != ExecutionStatus.Completed)
+        {
+            <button class="btn btn-success btn-sm" @onclick="CompleteAsync">✓ Uzavrieť</button>
+        }
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2">
+            <div class="row g-2 small">
+                <div class="col-md-4"><span class="text-muted">Technológia:</span> <strong>@_exec.Technology</strong></div>
+                <div class="col-md-4"><span class="text-muted">SN:</span> <strong>@(_exec.SerialNumber.Length > 0 ? _exec.SerialNumber : "–")</strong></div>
+                <div class="col-md-4"><span class="text-muted">Výrobca:</span> <strong>@(_exec.Manufacturer.Length > 0 ? _exec.Manufacturer : "–")</strong></div>
+                <div class="col-md-4"><span class="text-muted">Zákazník:</span> <strong>@(_exec.Customer.Length > 0 ? _exec.Customer : "–")</strong></div>
+                <div class="col-md-4"><span class="text-muted">Miesto:</span> <strong>@(_exec.Location.Length > 0 ? _exec.Location : "–")</strong></div>
+                <div class="col-md-4"><span class="text-muted">Inšpektor:</span> <strong>@(_exec.Inspector.Length > 0 ? _exec.Inspector : "–")</strong></div>
+                <div class="col-md-4"><span class="text-muted">Projekt:</span> <strong>@(_exec.ProjectNumber.Length > 0 ? _exec.ProjectNumber : "–")</strong></div>
+                <div class="col-md-4"><span class="text-muted">Dátum:</span> <strong>@_exec.StartDate.ToString("dd.MM.yyyy")</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-2">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <small class="text-muted">Postup: @stats.Done/@stats.Total bodov (@stats.ProgressPct%)</small>
+                <div class="d-flex gap-2 small">
+                    <span class="text-success">✓ @stats.Pass</span>
+                    <span class="text-danger">✗ @stats.Fail</span>
+                    <span class="text-warning">! @stats.Observation</span>
+                    <span class="text-muted">N/A @stats.NA</span>
+                    <span class="text-secondary">○ @stats.Pending</span>
+                </div>
+            </div>
+            <div class="progress" style="height:10px">
+                <div class="progress-bar bg-success" style="width:@(stats.PassPct)%" title="OK"></div>
+                <div class="progress-bar bg-danger"
+                     style="width:@(stats.Total == 0 ? 0 : stats.Fail * 100.0 / stats.Total)%" title="FAIL"></div>
+                <div class="progress-bar bg-warning"
+                     style="width:@(stats.Total == 0 ? 0 : stats.Observation * 100.0 / stats.Total)%" title="Observation"></div>
+                <div class="progress-bar bg-secondary"
+                     style="width:@(stats.Total == 0 ? 0 : stats.NA * 100.0 / stats.Total)%" title="N/A"></div>
+            </div>
+        </div>
+    </div>
+
+    @foreach (var section in _exec.Sections.OrderBy(s => s.Order))
+    {
+        var sectionStats = GetSectionStats(section);
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light d-flex align-items-center justify-content-between"
+                 style="cursor:pointer" @onclick="() => ToggleSection(section.Id)">
+                <span class="fw-semibold">@section.Title</span>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success">✓ @sectionStats.pass</span>
+                    @if (sectionStats.fail > 0)
+                    {
+                        <span class="badge bg-danger">✗ @sectionStats.fail</span>
+                    }
+                    @if (sectionStats.obs > 0)
+                    {
+                        <span class="badge bg-warning text-dark">! @sectionStats.obs</span>
+                    }
+                    <span class="text-muted small">@sectionStats.done/@section.Items.Count</span>
+                    <span>@(_collapsedSections.Contains(section.Id) ? "▶" : "▼")</span>
+                </div>
+            </div>
+
+            @if (!_collapsedSections.Contains(section.Id))
+            {
+                <div class="card-body p-0">
+                    @foreach (var item in section.Items.OrderBy(i => i.Order))
+                    {
+                        var result = GetResult(item.Id);
+                        var expanded = _expandedItems.Contains(item.Id);
+                        <div class="border-bottom p-3 @(result.Status == ItemStatus.Fail ? "bg-danger bg-opacity-10" : result.Status == ItemStatus.Pass ? "bg-success bg-opacity-10" : "")">
+                            <div class="d-flex flex-wrap align-items-start gap-2">
+                                <div class="flex-fill">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <div>
+                                            @if (!item.IsRequired)
+                                            {
+                                                <span class="badge bg-light text-muted border me-1" title="Nepovinný">opt</span>
+                                            }
+                                            <span>@item.Description</span>
+                                            @if (!string.IsNullOrEmpty(item.Reference))
+                                            {
+                                                <span class="badge bg-light text-muted border ms-2" title="Referencia">@item.Reference</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-1 flex-wrap">
+                                    <button class="btn btn-sm @(result.Status == ItemStatus.Pass ? "btn-success" : "btn-outline-success")"
+                                            @onclick="() => SetStatus(item.Id, ItemStatus.Pass)" title="OK / Vyhovuje">
+                                        ✓ OK
+                                    </button>
+                                    <button class="btn btn-sm @(result.Status == ItemStatus.Fail ? "btn-danger" : "btn-outline-danger")"
+                                            @onclick="() => SetStatus(item.Id, ItemStatus.Fail)" title="FAIL / Nevyhovuje">
+                                        ✗ FAIL
+                                    </button>
+                                    <button class="btn btn-sm @(result.Status == ItemStatus.Observation ? "btn-warning" : "btn-outline-warning")"
+                                            @onclick="() => SetStatus(item.Id, ItemStatus.Observation)" title="Poznámka / Odchýlka">
+                                        ! OBS
+                                    </button>
+                                    <button class="btn btn-sm @(result.Status == ItemStatus.NA ? "btn-secondary" : "btn-outline-secondary")"
+                                            @onclick="() => SetStatus(item.Id, ItemStatus.NA)" title="Netýka sa">
+                                        N/A
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-light text-muted border"
+                                            @onclick="() => ToggleExpand(item.Id)"
+                                            title="@(expanded ? "Skryť poznámky/fotky" : "Zobraziť poznámky/fotky")">
+                                        @if (result.PhotoDataUrls.Count > 0)
+                                        {
+                                            <span>📷 @result.PhotoDataUrls.Count</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(result.Notes))
+                                        {
+                                            <span>💬</span>
+                                        }
+                                        @(expanded ? "▲" : "▼")
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (expanded)
+                            {
+                                <div class="mt-3 pt-2 border-top">
+                                    <div class="mb-2">
+                                        <label class="form-label small text-muted mb-1">Poznámka / komentár</label>
+                                        <textarea class="form-control form-control-sm" rows="2"
+                                                  placeholder="Zadajte poznámku..."
+                                                  value="@result.Notes"
+                                                  @oninput="@((e) => OnNotesChange(item.Id, e.Value?.ToString() ?? string.Empty))"
+                                                  @onblur="SaveAsync"></textarea>
+                                    </div>
+                                    <div>
+                                        <label class="form-label small text-muted mb-1">Fotografie</label>
+                                        <div class="d-flex flex-wrap gap-2 align-items-start">
+                                            @foreach (var photo in result.PhotoDataUrls)
+                                            {
+                                                var p = photo;
+                                                <div class="position-relative">
+                                                    <img src="@p" class="rounded border"
+                                                         style="width:80px;height:80px;object-fit:cover;cursor:pointer"
+                                                         @onclick="() => _previewPhoto = p" />
+                                                    <button class="btn btn-sm btn-danger position-absolute top-0 end-0"
+                                                            style="padding:0 4px;font-size:0.7rem;line-height:1.4"
+                                                            @onclick="() => RemovePhoto(item.Id, p)">×</button>
+                                                </div>
+                                            }
+                                            @if (result.PhotoDataUrls.Count < 5)
+                                            {
+                                                <label class="border rounded d-flex align-items-center justify-content-center text-muted"
+                                                       style="width:80px;height:80px;cursor:pointer;font-size:0.75rem;text-align:center">
+                                                    <InputFile accept="image/*"
+                                                               OnChange="@(e => HandlePhotoUpload(e, item.Id))"
+                                                               style="display:none" />
+                                                    📷<br />Pridať
+                                                </label>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-transparent fw-semibold">Všeobecné poznámky k testu</div>
+        <div class="card-body">
+            <textarea class="form-control" rows="4"
+                      placeholder="Celkové záverečné poznámky, výhrady, odporúčania..."
+                      value="@_exec.GeneralNotes"
+                      @oninput="@((e) => { _exec.GeneralNotes = e.Value?.ToString() ?? string.Empty; })"
+                      @onblur="SaveAsync"></textarea>
+        </div>
+        <div class="card-footer bg-transparent d-flex gap-2">
+            <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                @(_saving ? "Ukladám..." : "Uložiť")
+            </button>
+            @if (_exec.Status != ExecutionStatus.Completed)
+            {
+                <button class="btn btn-success" @onclick="CompleteAsync">✓ Uzavrieť kontrolný list</button>
+            }
+            <button class="btn btn-outline-secondary ms-auto"
+                    @onclick="@(() => Nav.NavigateTo($"/report/{_exec.Id}"))">
+                📄 Zobraziť report
+            </button>
+        </div>
+    </div>
+}
+
+@if (_previewPhoto != null)
+{
+    <div class="modal-backdrop fade show" @onclick="() => _previewPhoto = null"></div>
+    <div class="modal fade show d-block" tabindex="-1" @onclick="() => _previewPhoto = null">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content bg-dark border-0">
+                <img src="@_previewPhoto" class="img-fluid rounded" style="max-height:80vh;object-fit:contain" />
+            </div>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+        <div class="toast show align-items-center text-bg-success border-0">
+            <div class="d-flex">
+                <div class="toast-body">@_message</div>
+                <button class="btn-close btn-close-white me-2 m-auto" @onclick="() => _message = null"></button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private ChecklistExecution? _exec;
+    private Dictionary<string, ItemResult> _resultMap = new();
+    private HashSet<string> _expandedItems = new();
+    private HashSet<string> _collapsedSections = new();
+    private bool _loading = true;
+    private bool _saving;
+    private string? _message;
+    private string? _previewPhoto;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _exec = await Svc.GetExecutionAsync(Id);
+        if (_exec != null)
+            _resultMap = _exec.Results.ToDictionary(r => r.ItemId);
+        _loading = false;
+    }
+
+    private ItemResult GetResult(string itemId)
+    {
+        if (!_resultMap.TryGetValue(itemId, out var r))
+        {
+            r = new ItemResult { ItemId = itemId };
+            _resultMap[itemId] = r;
+            _exec!.Results.Add(r);
+        }
+        return r;
+    }
+
+    private async Task SetStatus(string itemId, ItemStatus status)
+    {
+        var r = GetResult(itemId);
+        r.Status = r.Status == status ? ItemStatus.Pending : status;
+        await SaveAsync();
+    }
+
+    private void OnNotesChange(string itemId, string value)
+    {
+        GetResult(itemId).Notes = value;
+    }
+
+    private async Task HandlePhotoUpload(InputFileChangeEventArgs e, string itemId)
+    {
+        if (e.File == null) return;
+        if (!e.File.ContentType.StartsWith("image/")) return;
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(10_000_000).CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            var base64 = Convert.ToBase64String(bytes);
+            var dataUrl = $"data:{e.File.ContentType};base64,{base64}";
+
+            var compressed = await JS.InvokeAsync<string>("compressImage", dataUrl, 1024, 768, 0.75);
+
+            var r = GetResult(itemId);
+            r.PhotoDataUrls.Add(compressed);
+            _expandedItems.Add(itemId);
+            await SaveAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Chyba pri nahrávaní: {ex.Message}";
+        }
+    }
+
+    private async Task RemovePhoto(string itemId, string photo)
+    {
+        GetResult(itemId).PhotoDataUrls.Remove(photo);
+        await SaveAsync();
+    }
+
+    private void ToggleExpand(string itemId)
+    {
+        if (!_expandedItems.Remove(itemId))
+            _expandedItems.Add(itemId);
+    }
+
+    private void ToggleSection(string sectionId)
+    {
+        if (!_collapsedSections.Remove(sectionId))
+            _collapsedSections.Add(sectionId);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_exec == null || _saving) return;
+        _saving = true;
+        _exec.Results = _resultMap.Values.ToList();
+        await Svc.SaveExecutionAsync(_exec);
+        _saving = false;
+    }
+
+    private async Task CompleteAsync()
+    {
+        if (_exec == null) return;
+        _exec.Status = ExecutionStatus.Completed;
+        _exec.CompletedDate = DateTime.Today;
+        await SaveAsync();
+        _message = "Kontrolný list bol uzavretý.";
+        StateHasChanged();
+    }
+
+    private (int done, int pass, int fail, int obs) GetSectionStats(TemplateSection section)
+    {
+        var results = section.Items.Select(i => GetResult(i.Id)).ToList();
+        return (
+            results.Count(r => r.Status != ItemStatus.Pending),
+            results.Count(r => r.Status == ItemStatus.Pass),
+            results.Count(r => r.Status == ItemStatus.Fail),
+            results.Count(r => r.Status == ItemStatus.Observation)
+        );
+    }
+
+    private static string StatusBadgeClass(ExecutionStatus s) => s switch
+    {
+        ExecutionStatus.Completed => "bg-success",
+        ExecutionStatus.OnHold => "bg-warning text-dark",
+        _ => "bg-warning text-dark"
+    };
+
+    private static string StatusLabel(ExecutionStatus s) => s switch
+    {
+        ExecutionStatus.Completed => "Dokončené",
+        ExecutionStatus.OnHold => "Pozastavené",
+        _ => "Prebieha"
+    };
+}

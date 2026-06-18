@@ -1,0 +1,123 @@
+@page "/"
+@inject ChecklistService Svc
+@inject NavigationManager Nav
+
+<PageTitle>FAT/SAT Tracker – Dashboard</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Dashboard</h1>
+    <button class="btn btn-primary" @onclick="@(() => Nav.NavigateTo("/checklists"))">
+        + Nový kontrolný list
+    </button>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="text-muted small">Celkovo</div>
+                    <div class="display-6 fw-bold">@_all.Count</div>
+                    <div class="text-muted small">kontrolných listov</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100 border-start border-4 border-warning">
+                <div class="card-body">
+                    <div class="text-muted small">Prebieha</div>
+                    <div class="display-6 fw-bold text-warning">@_inProgress.Count</div>
+                    <div class="text-muted small">aktívnych</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100 border-start border-4 border-success">
+                <div class="card-body">
+                    <div class="text-muted small">Dokončené</div>
+                    <div class="display-6 fw-bold text-success">@_completed.Count</div>
+                    <div class="text-muted small">uzavretých</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm h-100 border-start border-4 border-info">
+                <div class="card-body">
+                    <div class="text-muted small">Šablóny</div>
+                    <div class="display-6 fw-bold text-info">@_templateCount</div>
+                    <div class="text-muted small">dostupných</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (_inProgress.Count > 0)
+    {
+        <h2 class="h5 mb-3">Prebiehajúce testy</h2>
+        <div class="row g-3 mb-4">
+            @foreach (var exec in _inProgress.Take(6))
+            {
+                var stats = ChecklistService.GetStats(exec);
+                var failPct = stats.Total == 0 ? 0 : stats.Fail * 100.0 / stats.Total;
+                <div class="col-md-6 col-xl-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="badge @(exec.Type == ChecklistType.FAT ? "bg-primary" : "bg-success")">@exec.Type</span>
+                                <span class="text-muted small">@exec.StartDate.ToString("dd.MM.yyyy")</span>
+                            </div>
+                            <h6 class="card-title mb-0 mt-2">@exec.MachineName</h6>
+                            <div class="text-muted small mb-2">@exec.Technology — @exec.Customer</div>
+                            <div class="progress mb-1" style="height:6px">
+                                <div class="progress-bar bg-success" style="width:@(stats.PassPct)%"></div>
+                                <div class="progress-bar bg-danger" style="width:@failPct%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between small text-muted">
+                                <span>@stats.Done/@stats.Total bodov</span>
+                                <span>@stats.ProgressPct%</span>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent border-0 pt-0">
+                            <button class="btn btn-sm btn-outline-primary w-100"
+                                    @onclick="@(() => Nav.NavigateTo($"/checklist/{exec.Id}"))">
+                                Pokračovať →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_all.Count == 0)
+    {
+        <div class="text-center py-5 text-muted">
+            <div style="font-size:3rem">📋</div>
+            <h4>Zatiaľ žiadne kontrolné listy</h4>
+            <p>Vytvorte prvý FAT alebo SAT test kliknutím na tlačidlo vyššie.</p>
+        </div>
+    }
+}
+
+@code {
+    private List<ChecklistExecution> _all = [];
+    private List<ChecklistExecution> _inProgress = [];
+    private List<ChecklistExecution> _completed = [];
+    private int _templateCount;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = await Svc.GetExecutionsAsync();
+        _inProgress = _all.Where(e => e.Status == ExecutionStatus.InProgress)
+                          .OrderByDescending(e => e.StartDate).ToList();
+        _completed = _all.Where(e => e.Status == ExecutionStatus.Completed).ToList();
+        _templateCount = (await Svc.GetTemplatesAsync()).Count;
+        _loading = false;
+    }
+}

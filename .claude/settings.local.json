@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir \"C:\\\\Users\\\\admin\\\\source\\\\repos\\\\CheckListTracker\\\\CheckListTracker\\\\Models\")",
+      "Bash(mkdir \"C:\\\\Users\\\\admin\\\\source\\\\repos\\\\CheckListTracker\\\\CheckListTracker\\\\Services\")",
+      "Bash(mkdir \"C:\\\\Users\\\\admin\\\\source\\\\repos\\\\CheckListTracker\\\\CheckListTracker\\\\wwwroot\\\\js\")",
+      "PowerShell(Start-Sleep -Seconds 3; Invoke-WebRequest -Uri \"http://localhost:5194\" -TimeoutSec 5 -UseBasicParsing 2>&1 | Select-Object -First 5)",
+      "Skill(run)",
+      "Bash(dotnet run *)",
+      "Bash(curl -s http://localhost:5194)",
+      "Bash(curl -s http://localhost:5001)",
+      "Bash(curl -s http://localhost:5223)",
+      "Bash(curl -s https://localhost:7183 --insecure)"
+    ]
+  }
+}

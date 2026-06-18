@@ -1,0 +1,297 @@
+@page "/checklists"
+@inject ChecklistService Svc
+@inject NavigationManager Nav
+
+<PageTitle>Kontrolné listy – FAT/SAT Tracker</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Kontrolné listy</h1>
+    <button class="btn btn-primary" @onclick="() => _showNew = true">+ Nový kontrolný list</button>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+}
+else if (_executions.Count == 0)
+{
+    <div class="text-center py-5 text-muted">
+        <div style="font-size:3rem">📋</div>
+        <h4>Žiadne kontrolné listy</h4>
+        <p>Vytvorte nový FAT alebo SAT kontrolný list.</p>
+        <button class="btn btn-primary" @onclick="() => _showNew = true">+ Nový kontrolný list</button>
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Typ</th>
+                    <th>Stroj / zariadenie</th>
+                    <th>Technológia</th>
+                    <th>Zákazník</th>
+                    <th>Stav</th>
+                    <th>Postup</th>
+                    <th>Dátum</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var exec in _executions.OrderByDescending(e => e.StartDate))
+                {
+                    var stats = ChecklistService.GetStats(exec);
+                    <tr>
+                        <td>
+                            <span class="badge @(exec.Type == ChecklistType.FAT ? "bg-primary" : "bg-success")">
+                                @exec.Type
+                            </span>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@exec.MachineName</div>
+                            @if (!string.IsNullOrEmpty(exec.SerialNumber))
+                            {
+                                <div class="text-muted small">SN: @exec.SerialNumber</div>
+                            }
+                        </td>
+                        <td class="text-muted small">@exec.Technology</td>
+                        <td class="text-muted small">@exec.Customer</td>
+                        <td>
+                            <span class="badge @StatusBadgeClass(exec.Status)">
+                                @StatusLabel(exec.Status)
+                            </span>
+                        </td>
+                        <td style="min-width:120px">
+                            <div class="progress mb-1" style="height:6px">
+                                <div class="progress-bar bg-success" style="width:@(stats.PassPct)%"></div>
+                                <div class="progress-bar bg-danger"
+                                     style="width:@(stats.Total == 0 ? 0 : stats.Fail * 100.0 / stats.Total)%"></div>
+                            </div>
+                            <div class="small text-muted">@stats.Done/@stats.Total</div>
+                        </td>
+                        <td class="text-muted small">@exec.StartDate.ToString("dd.MM.yyyy")</td>
+                        <td>
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-outline-primary"
+                                        @onclick="@(() => Nav.NavigateTo($"/checklist/{exec.Id}"))">
+                                    Otvoriť
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="@(() => Nav.NavigateTo($"/report/{exec.Id}"))">
+                                    Report
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="@(() => ConfirmDelete(exec))">×</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_showNew)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Nový kontrolný list</h5>
+                    <button class="btn-close" @onclick="CloseNew"></button>
+                </div>
+                <div class="modal-body">
+                    @if (_templates.Count == 0)
+                    {
+                        <div class="alert alert-warning">
+                            Najprv vytvorte aspoň jednu šablónu v sekcii
+                            <a href="/templates">Šablóny</a>.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Šablóna *</label>
+                                <select class="form-select" @bind="_newTemplateId">
+                                    <option value="">-- Vybrať šablónu --</option>
+                                    @foreach (var tpl in _templates)
+                                    {
+                                        <option value="@tpl.Id">@tpl.Name (@tpl.Technology)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Typ testu *</label>
+                                <div class="d-flex gap-3 mt-2">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" id="typeFAT"
+                                               checked="@(_newType == ChecklistType.FAT)"
+                                               @onchange="() => _newType = ChecklistType.FAT" />
+                                        <label class="form-check-label" for="typeFAT">FAT – Factory Acceptance Test</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" id="typeSAT"
+                                               checked="@(_newType == ChecklistType.SAT)"
+                                               @onchange="() => _newType = ChecklistType.SAT" />
+                                        <label class="form-check-label" for="typeSAT">SAT – Site Acceptance Test</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Názov stroja / zariadenia *</label>
+                                <input class="form-control" @bind="_newMachineName" placeholder="napr. CNC Fréza XYZ-500" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Sériové číslo</label>
+                                <input class="form-control" @bind="_newSerial" placeholder="SN-12345" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Výrobca</label>
+                                <input class="form-control" @bind="_newManufacturer" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Zákazník</label>
+                                <input class="form-control" @bind="_newCustomer" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Miesto inštalácie / závod</label>
+                                <input class="form-control" @bind="_newLocation" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Inšpektor / technik</label>
+                                <input class="form-control" @bind="_newInspector" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Číslo projektu / zákazky</label>
+                                <input class="form-control" @bind="_newProjectNum" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Dátum začiatku</label>
+                                <input class="form-control" type="date" @bind="_newDate" />
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_newError))
+                        {
+                            <div class="alert alert-danger mt-3 py-2">@_newError</div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseNew">Zrušiť</button>
+                    @if (_templates.Count > 0)
+                    {
+                        <button class="btn btn-primary" @onclick="CreateAsync" disabled="@_creating">
+                            @(_creating ? "Vytváram..." : "Vytvoriť a otvoriť")
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_deleteTarget != null)
+{
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal fade show d-block" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Potvrdiť zmazanie</h5>
+                </div>
+                <div class="modal-body">
+                    Naozaj chcete zmazať kontrolný list
+                    <strong>@_deleteTarget.MachineName – @_deleteTarget.Type</strong>?
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => _deleteTarget = null">Zrušiť</button>
+                    <button class="btn btn-danger" @onclick="DoDelete">Zmazať</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ChecklistExecution> _executions = [];
+    private List<ChecklistTemplate> _templates = [];
+    private bool _loading = true;
+
+    private bool _showNew;
+    private bool _creating;
+    private string _newTemplateId = "";
+    private ChecklistType _newType = ChecklistType.FAT;
+    private string _newMachineName = "";
+    private string _newSerial = "";
+    private string _newManufacturer = "";
+    private string _newCustomer = "";
+    private string _newLocation = "";
+    private string _newInspector = "";
+    private string _newProjectNum = "";
+    private DateTime _newDate = DateTime.Today;
+    private string? _newError;
+
+    private ChecklistExecution? _deleteTarget;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _executions = await Svc.GetExecutionsAsync();
+        _templates = await Svc.GetTemplatesAsync();
+        _loading = false;
+    }
+
+    private void CloseNew()
+    {
+        _showNew = false;
+        _newError = null;
+    }
+
+    private async Task CreateAsync()
+    {
+        _newError = null;
+        if (string.IsNullOrWhiteSpace(_newTemplateId)) { _newError = "Vyberte šablónu."; return; }
+        if (string.IsNullOrWhiteSpace(_newMachineName)) { _newError = "Zadajte názov stroja."; return; }
+
+        _creating = true;
+        var tpl = _templates.First(t => t.Id == _newTemplateId);
+        var exec = await Svc.CreateFromTemplateAsync(tpl, _newType);
+        exec.MachineName = _newMachineName;
+        exec.SerialNumber = _newSerial;
+        exec.Manufacturer = _newManufacturer;
+        exec.Customer = _newCustomer;
+        exec.Location = _newLocation;
+        exec.Inspector = _newInspector;
+        exec.ProjectNumber = _newProjectNum;
+        exec.StartDate = _newDate;
+        await Svc.SaveExecutionAsync(exec);
+
+        Nav.NavigateTo($"/checklist/{exec.Id}");
+    }
+
+    private void ConfirmDelete(ChecklistExecution exec) => _deleteTarget = exec;
+
+    private async Task DoDelete()
+    {
+        if (_deleteTarget == null) return;
+        await Svc.DeleteExecutionAsync(_deleteTarget.Id);
+        _executions = await Svc.GetExecutionsAsync();
+        _deleteTarget = null;
+    }
+
+    private static string StatusBadgeClass(ExecutionStatus s) => s switch
+    {
+        ExecutionStatus.Completed => "bg-success",
+        ExecutionStatus.OnHold => "bg-warning text-dark",
+        _ => "bg-warning text-dark"
+    };
+
+    private static string StatusLabel(ExecutionStatus s) => s switch
+    {
+        ExecutionStatus.Completed => "Dokončené",
+        ExecutionStatus.OnHold => "Pozastavené",
+        _ => "Prebieha"
+    };
+}
